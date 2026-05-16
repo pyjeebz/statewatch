@@ -1,0 +1,176 @@
+{
+  "version": 4,
+  "terraform_version": "1.7.5",
+  "serial": 42,
+  "lineage": "8f6c2b1a-3d4e-4f50-9a1b-0c2d3e4f5a6b",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "google_compute_instance",
+      "name": "api_server",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 6,
+          "attributes": {
+            "name": "api-server-prod",
+            "zone": "us-central1-a",
+            "machine_type": "n2-standard-4",
+            "project": "demo-project",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/demo-project/zones/us-central1-a/instances/api-server-prod",
+            "instance_id": "4012938471203948710",
+            "cpu_platform": "Intel Cascade Lake",
+            "current_status": "RUNNING",
+            "can_ip_forward": false,
+            "deletion_protection": false,
+            "label_fingerprint": "abc123==",
+            "metadata_fingerprint": "def456==",
+            "tags_fingerprint": "ghi789==",
+            "labels": {
+              "env": "prod",
+              "team": "platform"
+            },
+            "tags": ["http-server", "ssh"],
+            "metadata": {
+              "enable-oslogin": "TRUE"
+            },
+            "network_interface": [
+              {
+                "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+                "subnetwork": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1/subnetworks/prod-subnet",
+                "subnetwork_project": "demo-project",
+                "network_ip": "10.0.0.10",
+                "access_config": []
+              }
+            ],
+            "service_account": [
+              {
+                "email": "sa-api@demo-project.iam.gserviceaccount.com",
+                "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+              }
+            ],
+            "scheduling": [
+              {
+                "preemptible": false,
+                "automatic_restart": true,
+                "on_host_maintenance": "MIGRATE"
+              }
+            ],
+            "boot_disk": [
+              {
+                "auto_delete": true,
+                "device_name": "persistent-disk-0",
+                "initialize_params": [
+                  {
+                    "image": "projects/debian-cloud/global/images/debian-12-bookworm-v20240515",
+                    "size": 20,
+                    "type": "pd-balanced"
+                  }
+                ]
+              }
+            ],
+            "timeouts": null
+          },
+          "dependencies": [
+            "google_compute_subnetwork.prod_subnet",
+            "google_service_account.api"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "module.data_plane",
+      "mode": "managed",
+      "type": "google_compute_instance",
+      "name": "worker",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 6,
+          "index_key": 0,
+          "attributes": {
+            "name": "worker-01",
+            "zone": "us-central1-b",
+            "machine_type": "e2-medium",
+            "project": "demo-project",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/demo-project/zones/us-central1-b/instances/worker-01",
+            "instance_id": "7781234509871234509",
+            "cpu_platform": "AMD Rome",
+            "current_status": "RUNNING",
+            "can_ip_forward": false,
+            "deletion_protection": false,
+            "label_fingerprint": "zzz999==",
+            "labels": {
+              "env": "prod",
+              "team": "data"
+            },
+            "tags": ["worker"],
+            "metadata": {
+              "enable-oslogin": "TRUE"
+            },
+            "network_interface": [
+              {
+                "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+                "subnetwork": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1/subnetworks/prod-subnet",
+                "network_ip": "10.0.0.20",
+                "access_config": []
+              }
+            ],
+            "service_account": [
+              {
+                "email": "sa-worker@demo-project.iam.gserviceaccount.com",
+                "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+              }
+            ],
+            "scheduling": [
+              {
+                "preemptible": true,
+                "automatic_restart": false,
+                "on_host_maintenance": "TERMINATE"
+              }
+            ],
+            "timeouts": null
+          },
+          "dependencies": [
+            "module.data_plane.google_compute_subnetwork.prod_subnet"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "app_data",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "name": "demo-project-app-data",
+            "location": "US",
+            "force_destroy": false,
+            "storage_class": "STANDARD"
+          }
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "google_compute_image",
+      "name": "debian",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "family": "debian-12",
+            "project": "debian-cloud",
+            "self_link": "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/images/debian-12-bookworm-v20240515"
+          }
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
