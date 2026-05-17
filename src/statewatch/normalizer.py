@@ -46,6 +46,14 @@ class Resource:
         attributes: Normalized, comparable attribute bag the differ walks. Provider noise
             (fingerprints, generated timestamps, server-assigned ids) is removed here.
         source: Which side this came from — ``"terraform"`` or ``"live"``.
+        terraform_address: The Terraform resource address
+            (e.g. ``module.x.google_compute_instance.api[0]``) when this came from state,
+            else ``None``. Phase 2 uses it to resolve ``depends_on`` / manual-edge targets
+            (which speak Terraform addresses) to canonical ``resource_id`` graph nodes, and
+            as human-readable node metadata.
+        depends_on: Explicit Terraform ``depends_on`` / reference targets from the
+            ``.tfstate`` instance, as Terraform addresses. Phase 2 turns these into
+            *automatic* graph edges. Empty for live-state resources.
     """
 
     resource_id: str
@@ -55,6 +63,8 @@ class Resource:
     parent_refs: tuple[str, ...] = ()
     attributes: dict[str, Any] = field(default_factory=dict)
     source: str = "terraform"
+    terraform_address: str | None = None
+    depends_on: tuple[str, ...] = ()
 
 
 # --------------------------------------------------------------------------------------
@@ -156,11 +166,19 @@ def _common_compute_instance_attributes(
     }
 
 
-def normalize_compute_instance_from_tfstate(attrs: dict[str, Any], *, project: str) -> Resource:
+def normalize_compute_instance_from_tfstate(
+    attrs: dict[str, Any],
+    *,
+    project: str,
+    terraform_address: str | None = None,
+    depends_on: tuple[str, ...] = (),
+) -> Resource:
     """Normalize one ``google_compute_instance`` entry from a parsed ``.tfstate``.
 
     ``attrs`` is the ``attributes`` dict of a single resource instance as produced by
-    :func:`statewatch.tfstate.extract_compute_instances`.
+    :func:`statewatch.tfstate.extract_compute_instances`. ``terraform_address`` and
+    ``depends_on`` come from the same :class:`~statewatch.tfstate.TerraformResourceInstance`
+    and are carried onto the :class:`Resource` for Phase 2 graph construction.
     """
     name = attrs.get("name", "")
     zone = attrs.get("zone")
@@ -220,6 +238,8 @@ def normalize_compute_instance_from_tfstate(attrs: dict[str, Any], *, project: s
         ),
         attributes=attributes,
         source="terraform",
+        terraform_address=terraform_address,
+        depends_on=tuple(depends_on),
     )
 
 

@@ -1,0 +1,9 @@
+version: 1
+project: demo-project
+
+# Manual dependency the Terraform state cannot express: the API server reads/writes an
+# application data bucket, but nothing in .tfstate links them.
+dependencies:
+  - from: google_compute_instance.api_server
+    to: google_storage_bucket.app_data
+    reason: "API server reads/writes application data in this bucket"
