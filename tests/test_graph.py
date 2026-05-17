@@ -86,7 +86,8 @@ def test_manual_edge_added_programmatically(tfstate: dict[str, Any]) -> None:
     assert g.has_edge(api, "google_storage_bucket.app_data")
     edge = g.edges[api, "google_storage_bucket.app_data"]
     assert edge["kind"] == "manual"
-    assert "manual: reads/writes app data" in edge["reason"]
+    # Reason is the raw user text; the "manual:" label comes from `kind`, not the reason.
+    assert edge["reason"] == "reads/writes app data"
     assert g.nodes["google_storage_bucket.app_data"]["external"] is True
 
 

@@ -228,7 +228,8 @@ def build_graph(
             src,
             dst,
             kind="manual",
-            reason=f"manual: {medge.reason}",
+            # The renderer prefixes "[manual: ...]" from `kind`; don't double it here.
+            reason=medge.reason,
         )
 
     return g
