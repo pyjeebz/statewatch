@@ -40,6 +40,10 @@ class TerraformResourceInstance:
     module: str
     index_key: Any
     attributes: dict[str, Any]
+    #: Explicit ``depends_on`` / reference targets recorded in state, as Terraform
+    #: addresses (e.g. ``google_compute_subnetwork.prod_subnet``). Phase 2 turns these
+    #: into automatic graph edges. Empty when the instance declares no dependencies.
+    dependencies: tuple[str, ...] = ()
 
     @property
     def address(self) -> str:
@@ -109,6 +113,7 @@ def iter_managed_resources(
                     module=module,
                     index_key=inst.get("index_key"),
                     attributes=attrs,
+                    dependencies=tuple(inst.get("dependencies") or ()),
                 )
             )
     return out
