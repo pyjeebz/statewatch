@@ -1,0 +1,170 @@
+{
+  "version": 4,
+  "terraform_version": "1.7.5",
+  "serial": 11,
+  "lineage": "2b1c4d6e-7f80-4a12-9b3c-5d6e7f801a2b",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "google_compute_subnetwork",
+      "name": "prod_subnet",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "name": "prod-subnet",
+            "region": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1",
+            "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+            "ip_cidr_range": "10.0.0.0/24",
+            "private_ip_google_access": true,
+            "purpose": "PRIVATE",
+            "secondary_ip_range": [
+              { "range_name": "pods", "ip_cidr_range": "10.4.0.0/14" }
+            ]
+          },
+          "dependencies": ["google_compute_network.prod_vpc"]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "google_compute_firewall",
+      "name": "allow_http",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "name": "allow-http",
+            "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+            "direction": "INGRESS",
+            "priority": 1000,
+            "disabled": false,
+            "source_ranges": ["10.0.0.0/8"],
+            "target_tags": ["http-server"],
+            "allow": [{ "protocol": "tcp", "ports": ["80", "443"] }]
+          },
+          "dependencies": ["google_compute_network.prod_vpc"]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "google_compute_instance",
+      "name": "api_server",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 6,
+          "attributes": {
+            "name": "api-server-prod",
+            "zone": "us-central1-a",
+            "machine_type": "n2-standard-4",
+            "can_ip_forward": false,
+            "deletion_protection": false,
+            "labels": { "env": "prod" },
+            "tags": ["http-server", "ssh"],
+            "metadata": { "enable-oslogin": "TRUE" },
+            "network_interface": [
+              {
+                "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+                "subnetwork": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1/subnetworks/prod-subnet",
+                "network_ip": "10.0.0.10",
+                "access_config": []
+              }
+            ],
+            "service_account": [
+              {
+                "email": "sa-app@demo-project.iam.gserviceaccount.com",
+                "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+              }
+            ],
+            "scheduling": [{ "preemptible": false, "automatic_restart": true }]
+          },
+          "dependencies": [
+            "google_compute_subnetwork.prod_subnet",
+            "google_compute_firewall.allow_http"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "google_compute_instance",
+      "name": "web",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 6,
+          "index_key": 2,
+          "attributes": {
+            "name": "web-2",
+            "zone": "us-central1-a",
+            "machine_type": "e2-standard-2",
+            "can_ip_forward": false,
+            "deletion_protection": false,
+            "labels": { "env": "prod" },
+            "tags": ["http-server"],
+            "metadata": { "enable-oslogin": "TRUE" },
+            "network_interface": [
+              {
+                "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+                "subnetwork": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1/subnetworks/prod-subnet",
+                "network_ip": "10.0.0.10",
+                "access_config": []
+              }
+            ],
+            "service_account": [
+              {
+                "email": "sa-app@demo-project.iam.gserviceaccount.com",
+                "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+              }
+            ],
+            "scheduling": [{ "preemptible": false, "automatic_restart": true }]
+          },
+          "dependencies": ["google_compute_subnetwork.prod_subnet"]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "google_compute_instance",
+      "name": "worker",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 6,
+          "attributes": {
+            "name": "worker-01",
+            "zone": "us-central1-b",
+            "machine_type": "e2-medium",
+            "can_ip_forward": false,
+            "deletion_protection": false,
+            "labels": { "env": "prod" },
+            "tags": ["worker"],
+            "metadata": { "enable-oslogin": "TRUE" },
+            "network_interface": [
+              {
+                "network": "https://www.googleapis.com/compute/v1/projects/demo-project/global/networks/prod-vpc",
+                "subnetwork": "https://www.googleapis.com/compute/v1/projects/demo-project/regions/us-central1/subnetworks/prod-subnet",
+                "network_ip": "10.0.0.10",
+                "access_config": []
+              }
+            ],
+            "service_account": [
+              {
+                "email": "sa-app@demo-project.iam.gserviceaccount.com",
+                "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
+              }
+            ],
+            "scheduling": [{ "preemptible": false, "automatic_restart": true }]
+          },
+          "dependencies": ["google_compute_subnetwork.prod_subnet"]
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
