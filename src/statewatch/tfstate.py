@@ -57,29 +57,58 @@ class TerraformResourceInstance:
         return base
 
 
+def _read_gcs(uri: str) -> str:
+    """Download ``gs://bucket/path`` text using Application Default Credentials.
+
+    Reuses ADC (the same auth as the Cloud Asset Inventory client) — no separate
+    credential path.
+    """
+    try:
+        from google.cloud import storage  # type: ignore[attr-defined]
+    except ImportError as exc:  # pragma: no cover - declared dependency
+        raise TerraformStateError(
+            "google-cloud-storage is required to read gs:// state; install statewatch "
+            "with its dependencies."
+        ) from exc
+    without_scheme = uri[len("gs://") :]
+    bucket_name, _, blob_path = without_scheme.partition("/")
+    if not bucket_name or not blob_path:
+        raise TerraformStateError(f"{uri}: expected gs://<bucket>/<path>")
+    try:
+        client = storage.Client()
+        blob = client.bucket(bucket_name).blob(blob_path)
+        return blob.download_as_text()
+    except Exception as exc:  # auth / not-found / permission -> uniform error
+        raise TerraformStateError(f"{uri}: could not read GCS object: {exc}") from exc
+
+
 def load_tfstate(path: str | Path) -> dict[str, Any]:
-    """Read and parse a ``.tfstate`` file, validating it looks like Terraform state.
+    """Read and parse a ``.tfstate`` from a local path or a ``gs://`` URI.
 
     Raises:
-        FileNotFoundError: if ``path`` does not exist.
-        TerraformStateError: if the file is not valid JSON, or not a supported state
-            format version.
+        FileNotFoundError: if a local ``path`` does not exist.
+        TerraformStateError: if the file is unreadable, not valid JSON, or not a
+            supported state format version.
     """
-    p = Path(path)
-    try:
-        raw = p.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise
+    src = str(path)
+    if src.startswith("gs://"):
+        raw = _read_gcs(src)
+    else:
+        p = Path(path)
+        try:
+            raw = p.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise
     try:
         state = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise TerraformStateError(f"{p}: not valid JSON: {exc}") from exc
+        raise TerraformStateError(f"{src}: not valid JSON: {exc}") from exc
     if not isinstance(state, dict):
-        raise TerraformStateError(f"{p}: expected a JSON object at the top level")
+        raise TerraformStateError(f"{src}: expected a JSON object at the top level")
     version = state.get("version")
     if version not in _SUPPORTED_STATE_VERSIONS:
         raise TerraformStateError(
-            f"{p}: unsupported Terraform state version {version!r} "
+            f"{src}: unsupported Terraform state version {version!r} "
             f"(supported: {sorted(_SUPPORTED_STATE_VERSIONS)})"
         )
     return state
