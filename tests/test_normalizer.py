@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from statewatch.normalizer import (
-    Resource,
-    normalize_compute_instance_from_cai,
-    normalize_compute_instance_from_tfstate,
+from statewatch.normalizer import Resource
+from statewatch.resources.compute_instance import (
+    normalize_from_cai as normalize_compute_instance_from_cai,
+)
+from statewatch.resources.compute_instance import (
+    normalize_from_tfstate as normalize_compute_instance_from_tfstate,
 )
 from statewatch.tfstate import extract_compute_instances
 

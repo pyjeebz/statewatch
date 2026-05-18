@@ -15,7 +15,10 @@ from statewatch.graph.manual import (
 )
 from statewatch.graph.render import render_dot, render_json, render_text
 from statewatch.graph.validator import validate_graph
-from statewatch.normalizer import Resource, normalize_compute_instance_from_tfstate
+from statewatch.normalizer import Resource
+from statewatch.resources.compute_instance import (
+    normalize_from_tfstate as normalize_compute_instance_from_tfstate,
+)
 from statewatch.tfstate import extract_compute_instances
 
 PROJECT = "demo-project"
