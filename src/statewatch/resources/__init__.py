@@ -11,24 +11,27 @@ from collections.abc import Callable
 from typing import Any
 
 from statewatch.normalizer import Resource
-from statewatch.resources import compute_instance, firewall, subnetwork
+from statewatch.resources import compute_instance, firewall, gke_cluster, subnetwork
 
 _TF: dict[str, Callable[..., Resource]] = {
     compute_instance.RESOURCE_TYPE: compute_instance.normalize_from_tfstate,
     firewall.RESOURCE_TYPE: firewall.normalize_from_tfstate,
     subnetwork.RESOURCE_TYPE: subnetwork.normalize_from_tfstate,
+    gke_cluster.RESOURCE_TYPE: gke_cluster.normalize_from_tfstate,
 }
 
 _CAI_ASSET_TO_TYPE = {
     "compute.googleapis.com/Instance": compute_instance.RESOURCE_TYPE,
     "compute.googleapis.com/Firewall": firewall.RESOURCE_TYPE,
     "compute.googleapis.com/Subnetwork": subnetwork.RESOURCE_TYPE,
+    "container.googleapis.com/Cluster": gke_cluster.RESOURCE_TYPE,
 }
 
 _CAI: dict[str, Callable[..., Resource]] = {
     compute_instance.RESOURCE_TYPE: compute_instance.normalize_from_cai,
     firewall.RESOURCE_TYPE: firewall.normalize_from_cai,
     subnetwork.RESOURCE_TYPE: subnetwork.normalize_from_cai,
+    gke_cluster.RESOURCE_TYPE: gke_cluster.normalize_from_cai,
 }
 
 #: Terraform type names statewatch normalizes in v0.1 (Phase 3 scope).

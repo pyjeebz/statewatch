@@ -1,0 +1,38 @@
+name: "statewatch"
+description: "Dependency-aware GCP drift detection — what changed, and what it breaks."
+author: "pyjeebz"
+branding:
+  icon: "git-branch"
+  color: "blue"
+
+inputs:
+  tfstate:
+    description: "Terraform state: a local .tfstate path or a gs://bucket/path URI."
+    required: true
+  project:
+    description: "GCP project id to compare live state against."
+    required: true
+  config:
+    description: "Path to statewatch.yaml (optional; Slack, manual edges)."
+    required: false
+    default: ""
+  stub:
+    description: "Use offline sample live-state instead of Cloud Asset Inventory (demo)."
+    required: false
+    default: "false"
+  post-comment:
+    description: "Upsert a single findings comment on the PR."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to post the PR comment."
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+
+# Authentication: provide GCP credentials to the job (e.g. google-github-actions/auth)
+# before this step, unless using stub: true. The check fails when statewatch exits 2
+# (CRITICAL severity or a significant blast radius).
