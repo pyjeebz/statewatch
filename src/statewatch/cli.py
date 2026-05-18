@@ -201,8 +201,12 @@ def scan(
         report = _produce_report(tfstate, project, stub=stub)
         changed = changed_findings(report, key)
         if changed:
-            render_report(report)
-            _maybe_slack(report, config)
+            # Notify on ONLY the new/changed findings — never re-surface unchanged
+            # drift just because some other finding changed. State is still saved
+            # from the full report so every current fingerprint is remembered.
+            notify = Report(findings=changed)
+            render_report(notify)
+            _maybe_slack(notify, config)
         else:
             _err.print("[dim]no new or changed drift.[/dim]")
         save_state(report, key)
