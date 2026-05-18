@@ -39,15 +39,30 @@ Original report retained below for history.
 
 </details>
 
-## Phase 1 follow-ups (carried forward)
+### 2. `scan` degraded instead of failing when GCP auth was unavailable — RESOLVED in Phase 4
+`adapters/gcp.py` now makes a real `AssetServiceClient.list_assets` call by default.
+`scan` no longer degrades: a missing-credentials situation is a hard `typer.Exit(2)`
+(`cli._produce_report`). Offline demo/CI is an explicit, separate path — `--stub` or
+`STATEWATCH_STUB_GCP=1` — never a silent fallback. Original carry-forward retained below.
 
-### 2. `scan` degrades instead of failing when GCP auth is unavailable
-- **Where:** `src/statewatch/cli.py` — `scan`, `AdapterAuthError` handler.
-- **What:** With no Application Default Credentials, `scan` prints a warning and continues
-  against the **stubbed** CAI fetch instead of exiting non-zero.
-- **Why deferred:** In Phase 1 the live-state fetch is stubbed, so missing credentials
-  aren't actually fatal yet; degrading keeps `scan` demonstrable offline.
-- **Fix when:** the moment `GCPAdapter._list_compute_instances` makes a real
-  `list_assets` call (Phase 1 follow-up / Phase 4 GCS+real-CAI work). At that point a
-  missing-credentials situation MUST become a hard `typer.Exit(2)`. The code carries an
-  inline TODO at the call site.
+<details><summary>Original follow-up (Phases 1–3)</summary>
+
+`scan` printed a warning and continued against stubbed CAI when ADC was absent, because
+the live-state fetch was stubbed and degrading kept it demonstrable offline. The fix was
+gated on a real `list_assets` call landing, which it did in Phase 4.
+
+</details>
+
+## Carried to v0.2 (none)
+
+Nothing is being silently carried. v0.2 (drift attribution) is a separate, scoped release
+per `spec.md`; it is not a deferred bug.
+
+## Heuristics stated honestly (not bugs, but tracked)
+
+- **Severity as a propagation proxy.** Impact labelling treats severity ≥ MEDIUM as
+  "propagates." This is a deliberate heuristic, not dataflow analysis, and is stated as
+  such in terminal output, JSON, and the README. A future enhancement could model
+  per-attribute propagation; v0.1 intentionally does not.
+- **Firewall applicability inference** matches on network + target tags/SAs, not a
+  packet-level evaluation. Documented in `graph/inferred.py`.
