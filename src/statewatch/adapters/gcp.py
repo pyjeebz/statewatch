@@ -11,6 +11,8 @@ self-contained follow-up — see the TODO below.
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Iterable
 from typing import Any
 
@@ -25,6 +27,7 @@ _TYPE_TO_CAI_ASSET_TYPE = {
     "google_compute_instance": "compute.googleapis.com/Instance",
     "google_compute_firewall": "compute.googleapis.com/Firewall",
     "google_compute_subnetwork": "compute.googleapis.com/Subnetwork",
+    "google_container_cluster": "container.googleapis.com/Cluster",
 }
 _SUPPORTED = frozenset(_TYPE_TO_CAI_ASSET_TYPE) & SUPPORTED_RESOURCE_TYPES
 
@@ -34,9 +37,15 @@ class GCPAdapter:
 
     name = "gcp"
 
-    def __init__(self) -> None:
+    def __init__(self, *, stub: bool | None = None) -> None:
         self._credentials: Any | None = None
         self._default_project: str | None = None
+        # Offline mode: hand-built CAI data instead of a real API call. Off by default
+        # (real Cloud Asset Inventory). Enable explicitly, or via STATEWATCH_STUB_GCP=1
+        # for demos / CI without a GCP project.
+        if stub is None:
+            stub = os.environ.get("STATEWATCH_STUB_GCP", "") not in ("", "0", "false")
+        self._stub = stub
 
     # -- CloudAdapter protocol ---------------------------------------------------------
 
@@ -45,8 +54,10 @@ class GCPAdapter:
 
         Uses ``google.auth.default()`` — the same resolution order as ``gcloud`` and every
         Google client library. Raises :class:`AdapterAuthError` with remediation guidance
-        if no credentials are found.
+        if no credentials are found. No-op in stub mode (offline demo / CI).
         """
+        if self._stub:
+            return
         try:
             import google.auth
             from google.auth.exceptions import DefaultCredentialsError
@@ -100,26 +111,38 @@ class GCPAdapter:
                 resources.append(r)
         return resources
 
-    # -- CAI calls (stubbed) -----------------------------------------------------------
+    # -- CAI calls ---------------------------------------------------------------------
 
     def _list_assets(self, *, project: str) -> list[dict[str, Any]]:
         """Return CAI ``Asset`` dicts for the supported asset types in ``project``.
 
-        TODO (follow-up): replace this stub with a real call:
-
-            from google.cloud import asset_v1
-            client = asset_v1.AssetServiceClient(credentials=self._credentials)
-            pager = client.list_assets(request={
-                "parent": f"projects/{project}",
-                "asset_types": sorted(set(_TYPE_TO_CAI_ASSET_TYPE.values())),
-                "content_type": asset_v1.ContentType.RESOURCE,
-            })
-            return [json.loads(asset_v1.Asset.to_json(a)) for a in pager]
-
-        Until then we return realistic, hand-built data that drifts from the Phase 3
-        example state so the scan pipeline is exercisable offline.
+        Real Cloud Asset Inventory ``list_assets`` by default. Stub mode returns
+        hand-built data that drifts from the example state (offline demo / CI).
         """
-        return _stub_assets(project)
+        if self._stub:
+            return _stub_assets(project)
+
+        try:
+            from google.cloud import asset_v1
+        except ImportError as exc:  # pragma: no cover - declared dependency
+            raise AdapterError(
+                "google-cloud-asset is required; install statewatch with its dependencies."
+            ) from exc
+
+        try:
+            client = asset_v1.AssetServiceClient(credentials=self._credentials)
+            pager = client.list_assets(
+                request={
+                    "parent": f"projects/{project}",
+                    "asset_types": sorted(set(_TYPE_TO_CAI_ASSET_TYPE.values())),
+                    "content_type": asset_v1.ContentType.RESOURCE,
+                }
+            )
+            return [json.loads(asset_v1.Asset.to_json(asset)) for asset in pager]
+        except Exception as exc:  # google API errors -> uniform adapter failure
+            raise AdapterError(
+                f"Cloud Asset Inventory list_assets failed for project {project!r}: {exc}"
+            ) from exc
 
 
 # --------------------------------------------------------------------------------------
