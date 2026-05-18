@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "statewatch"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Dependency-aware infrastructure drift detector for GCP"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,9 +25,11 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.0",
     "google-cloud-asset>=3.20",
+    "google-cloud-storage>=2.10",
     "google-auth>=2.0",
     "networkx>=3.0",
     "pyyaml>=6.0",
+    "schedule>=1.2",
 ]
 
 [project.optional-dependencies]
