@@ -7,6 +7,7 @@ in later phases.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -20,11 +21,13 @@ from statewatch.graph.builder import build_graph
 from statewatch.graph.manual import ManualEdgeError, load_manual_edges
 from statewatch.graph.render import render as render_graph
 from statewatch.graph.validator import validate_graph
-from statewatch.normalizer import Resource, normalize_compute_instance_from_tfstate
-from statewatch.notifiers.terminal import render_drift
+from statewatch.normalizer import Resource
+from statewatch.notifiers.terminal import render_report
+from statewatch.report import build_report
+from statewatch.resources import SUPPORTED_RESOURCE_TYPES, normalize_tf
 from statewatch.tfstate import (
     TerraformStateError,
-    extract_compute_instances,
+    iter_managed_resources,
     load_tfstate,
 )
 
@@ -35,9 +38,6 @@ app = typer.Typer(
 )
 
 _err = Console(stderr=True)
-
-# Resource types statewatch supports in v0.1 Phase 1.
-_PHASE1_TYPES = ["google_compute_instance"]
 
 
 def _load_tf_resources(tfstate: Path, project: str) -> list[Resource]:
@@ -52,15 +52,18 @@ def _load_tf_resources(tfstate: Path, project: str) -> list[Resource]:
         _err.print(f"[red]Error reading Terraform state:[/red] {exc}")
         raise typer.Exit(code=2) from exc
 
-    return [
-        normalize_compute_instance_from_tfstate(
+    resources: list[Resource] = []
+    for inst in iter_managed_resources(state):
+        r = normalize_tf(
+            inst.type,
             inst.attributes,
             project=project,
             terraform_address=inst.address,
             depends_on=inst.dependencies,
         )
-        for inst in extract_compute_instances(state)
-    ]
+        if r is not None:  # unsupported types are skipped, not errors
+            resources.append(r)
+    return resources
 
 
 def _version_callback(value: bool) -> None:
@@ -93,38 +96,53 @@ def scan(
         "--project",
         help="GCP project id to compare live state against.",
     ),
+    output: str = typer.Option(
+        "text",
+        "--output",
+        help="Output format: text | json.",
+    ),
 ) -> None:
-    """Compare live GCP state against Terraform state and report drift."""
-    # 1. Load + parse + normalize Terraform state.
+    """Compare live GCP state against Terraform state; report severity × impact."""
+    if output not in ("text", "json"):
+        _err.print(f"[red]Unknown --output {output!r}[/red] (expected text|json)")
+        raise typer.Exit(code=2)
+
+    # 1. Load + normalize Terraform state, build the dependency graph from it.
     tf_resources = _load_tf_resources(tfstate, project)
+    graph = build_graph(tf_resources)
 
     # 2. Fetch live state from the cloud adapter.
     adapter = GCPAdapter()
     try:
         adapter.authenticate()
     except AdapterAuthError as exc:
-        # Phase 1 note: the live-state fetch is still stubbed, so a missing-credentials
-        # situation isn't fatal yet — warn and carry on so `scan` is demonstrable offline.
-        # Once fetch_resources makes a real Cloud Asset Inventory call this MUST become a
-        # hard error (raise typer.Exit(2)).
+        # The live-state fetch is still stubbed, so missing credentials isn't fatal yet —
+        # warn and carry on so scan is demonstrable offline. KNOWN_ISSUES #2: this MUST
+        # become a hard exit once a real Cloud Asset Inventory call lands.
         _err.print(f"[yellow]Warning:[/yellow] {exc}")
-        _err.print("[yellow]Proceeding with stubbed live state (Phase 1).[/yellow]")
+        _err.print("[yellow]Proceeding with stubbed live state.[/yellow]")
     except AdapterError as exc:
         _err.print(f"[red]GCP authentication failed:[/red] {exc}")
         raise typer.Exit(code=2) from exc
 
     try:
-        live_resources = adapter.fetch_resources(_PHASE1_TYPES, scope=project)
+        live_resources = adapter.fetch_resources(
+            sorted(SUPPORTED_RESOURCE_TYPES), scope=project
+        )
     except AdapterError as exc:
         _err.print(f"[red]Failed to fetch live state:[/red] {exc}")
         raise typer.Exit(code=2) from exc
 
-    # 3. Diff and render.
-    results = diff_resources(tf_resources, live_resources)
-    render_drift(results)
+    # 3. Diff -> classify severity -> traverse graph for impact -> report.
+    diffs = diff_resources(tf_resources, live_resources)
+    report = build_report(diffs, graph)
 
-    # Phase 1: informational only. Severity-based exit codes land in Phase 3.
-    raise typer.Exit(code=0)
+    if output == "json":
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+    else:
+        render_report(report)
+
+    raise typer.Exit(code=report.exit_code())
 
 
 @app.command()

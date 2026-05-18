@@ -3,7 +3,19 @@
 Tracked, deliberately-deferred items. Each says *why* it was deferred and *when* it must
 be addressed. A deferred fix that isn't written down is a forgotten bug.
 
-## Phase 3 entry tasks (address before/at the start of Phase 3)
+## Resolved
+
+### 1. Subnet ref dropped the region for bare-name inputs — RESOLVED in Phase 3
+Resolved at Phase 3 entry as planned. `normalizer.subnetwork_ref_from_attr` now produces
+a region-qualified canonical id for full-URL, path, **and** bare-name forms; for bare
+names the region is derived from the instance's own zone (a GCP instance's subnet is
+always in its region). `resources/subnetwork.py` builds its `resource_id` from the same
+shared `subnetwork_id`, so an instance's inferred subnet ref and the subnet resource node
+unify into one node. Regression locked by
+`tests/test_resources.py::test_known_issue_1_subnet_ref_unifies_across_input_forms`.
+Original report retained below for history.
+
+<details><summary>Original deferral (Phase 2)</summary>
 
 ### 1. `_normalize_subnetwork_ref` drops the region for bare-name inputs
 - **Where:** `src/statewatch/normalizer.py` — `_normalize_subnetwork_ref`.
@@ -24,6 +36,8 @@ be addressed. A deferred fix that isn't written down is a forgotten bug.
   derivation produce the *same* canonical id the Phase 3 subnetwork normalizer will assign
   — region-qualified — and add a normalizer test asserting an instance's inferred subnet
   ref equals the subnet resource's `resource_id` for bare-name, path, and URL inputs.
+
+</details>
 
 ## Phase 1 follow-ups (carried forward)
 

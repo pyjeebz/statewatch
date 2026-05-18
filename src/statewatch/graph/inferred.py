@@ -75,3 +75,50 @@ def inferred_edges(resource: Resource) -> list[InferredEdge]:
             )
         )
     return edges
+
+
+def _firewall_applies(fw: Resource, inst: Resource) -> bool:
+    """Does ``fw`` govern ``inst``? Same network + INGRESS + target tag/SA match.
+
+    A firewall never references instances by id — applicability is implicit (network +
+    target tags / service accounts). Modelling it is exactly the coupling Terraform
+    doesn't track, and it's what makes firewall drift show a real instance blast radius.
+    Heuristic, not a packet-level model — stated honestly.
+    """
+    fa, ia = fw.attributes, inst.attributes
+    if fa.get("direction", "INGRESS") != "INGRESS" or fa.get("disabled"):
+        return False
+    if not fa.get("network") or fa.get("network") != ia.get("network"):
+        return False
+    target_tags = set(fa.get("target_tags") or [])
+    target_sas = set(fa.get("target_service_accounts") or [])
+    if not target_tags and not target_sas:
+        return True  # untargeted firewall applies to every instance in the network
+    if target_tags & set(ia.get("tags") or []):
+        return True
+    return bool(target_sas and ia.get("service_account") in target_sas)
+
+
+def firewall_applicability_edges(resources: list[Resource]) -> list[InferredEdge]:
+    """Cross-resource inference: ``instance -> firewall`` when the firewall applies.
+
+    Edge direction follows the convention (instance *depends on* the firewall protecting
+    it), so a firewall drift surfaces its governed instances as predecessors.
+    """
+    firewalls = [r for r in resources if r.resource_type == "google_compute_firewall"]
+    instances = [r for r in resources if r.resource_type == "google_compute_instance"]
+    edges: list[InferredEdge] = []
+    for fw in firewalls:
+        for inst in instances:
+            if _firewall_applies(fw, inst):
+                edges.append(
+                    InferredEdge(
+                        source_id=inst.resource_id,
+                        target_id=fw.resource_id,
+                        target_type=fw.resource_type,
+                        target_name=fw.name,
+                        source_attribute="firewall",
+                        reason="inferred firewall applicability (network + target match)",
+                    )
+                )
+    return edges
