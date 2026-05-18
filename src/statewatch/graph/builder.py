@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias
 
 import networkx as nx
 
-from statewatch.graph.inferred import inferred_edges
+from statewatch.graph.inferred import firewall_applicability_edges, inferred_edges
 from statewatch.graph.manual import ManualEdge
 from statewatch.normalizer import Resource
 
@@ -212,6 +212,21 @@ def build_graph(
                 reason=edge.reason,
                 source_attribute=edge.source_attribute,
             )
+
+    # 3b. Cross-resource inferred edges: firewall applicability (instance -> firewall).
+    for edge in firewall_applicability_edges(resources):
+        if edge.target_id not in g or not g.nodes[edge.target_id].get("managed"):
+            _ensure_external_node(
+                g, edge.target_id, resource_type=edge.target_type, name=edge.target_name
+            )
+        _add_edge(
+            g,
+            edge.source_id,
+            edge.target_id,
+            kind="inferred",
+            reason=edge.reason,
+            source_attribute=edge.source_attribute,
+        )
 
     # 4. Manual edges from statewatch.yaml.
     for medge in manual_edges or []:
