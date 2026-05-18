@@ -114,9 +114,9 @@ def test_exit_code_matrix() -> None:
 def test_end_to_end_firewall_and_subnet_blast_radius(fw_subnet_tfstate: dict[str, Any]) -> None:
     tf = _resources(fw_subnet_tfstate)
     graph = build_graph(tf)
-    live = GCPAdapter().fetch_resources(["google_compute_instance",
-                                         "google_compute_firewall",
-                                         "google_compute_subnetwork"], scope=PROJECT)
+    live = GCPAdapter(stub=True).fetch_resources(["google_compute_instance",
+                                                  "google_compute_firewall",
+                                                  "google_compute_subnetwork"], scope=PROJECT)
     report = build_report(diff_resources(tf, live), graph)
 
     by_type = {f.resource_type: f for f in report.findings}
