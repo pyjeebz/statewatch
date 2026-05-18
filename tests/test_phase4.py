@@ -131,6 +131,26 @@ def test_watch_fingerprint_and_changed_detection(tmp_path: Path, monkeypatch) ->
     assert len(watchstate.changed_findings(bumped, key)) == 1
 
 
+def test_watch_notifies_only_changed_not_whole_report(tmp_path: Path, monkeypatch) -> None:
+    """Regression: when one of several findings changes, --watch must notify on only
+    that finding, not re-surface the unchanged ones."""
+    monkeypatch.setenv("STATEWATCH_STATE_DIR", str(tmp_path))
+    key = watchstate.state_key("p", "s.tfstate")
+
+    stable = Finding("fw-stable", "google_compute_firewall", "stable", "drifted", "CRITICAL")
+    v1 = Finding("sn", "google_compute_subnetwork", "sn", "drifted", "MEDIUM")
+    watchstate.save(Report(findings=[stable, v1]), key)
+
+    # Same scan except `sn` escalated; `stable` is byte-identical.
+    v2 = Finding("sn", "google_compute_subnetwork", "sn", "drifted", "CRITICAL")
+    full = Report(findings=[stable, v2])
+    changed = watchstate.changed_findings(full, key)
+
+    assert [f.resource_id for f in changed] == ["sn"]  # only the changed one
+    notify = Report(findings=changed)
+    assert all(f.resource_id != "fw-stable" for f in notify.findings)
+
+
 # --- interval parsing ---------------------------------------------------------------
 def test_parse_interval() -> None:
     assert _parse_interval("30s") == 30
