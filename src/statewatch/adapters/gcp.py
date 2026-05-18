@@ -1,11 +1,12 @@
 """GCP adapter — live resource state via Cloud Asset Inventory.
 
-Phase 1 status: the **authentication flow is real** (Application Default Credentials via
+The **authentication flow is real** (Application Default Credentials via
 ``google.auth.default()``), but :meth:`GCPAdapter.fetch_resources` returns *stubbed*
 CAI-shaped data rather than calling ``AssetServiceClient.list_assets``. The stub is shaped
-like a real CAI response and deliberately contains drift relative to the example Terraform
-state, so ``statewatch scan`` demonstrates an end-to-end diff today. Replacing the stub
-with the real ``list_assets`` call is a self-contained follow-up — see the TODO below.
+like real CAI responses and deliberately drifts from the Phase 3 example state
+(``tests/fixtures/firewall_subnet_drift.tfstate.json``) so ``statewatch scan`` shows
+severity × impact end to end. Replacing the stub with the real ``list_assets`` call is a
+self-contained follow-up — see the TODO below.
 """
 
 from __future__ import annotations
@@ -14,15 +15,18 @@ from collections.abc import Iterable
 from typing import Any
 
 from statewatch.adapters.base import AdapterAuthError, AdapterError
-from statewatch.normalizer import Resource, normalize_compute_instance_from_cai
+from statewatch.normalizer import Resource
+from statewatch.resources import (
+    SUPPORTED_RESOURCE_TYPES,
+    normalize_cai,
+)
 
-# Terraform type name -> Cloud Asset Inventory asset type. Phase 1 supports one type;
-# firewall / subnetwork / GKE entries get added here in Phases 3-4.
 _TYPE_TO_CAI_ASSET_TYPE = {
     "google_compute_instance": "compute.googleapis.com/Instance",
+    "google_compute_firewall": "compute.googleapis.com/Firewall",
+    "google_compute_subnetwork": "compute.googleapis.com/Subnetwork",
 }
-
-_SUPPORTED = frozenset(_TYPE_TO_CAI_ASSET_TYPE)
+_SUPPORTED = frozenset(_TYPE_TO_CAI_ASSET_TYPE) & SUPPORTED_RESOURCE_TYPES
 
 
 class GCPAdapter:
@@ -40,9 +44,8 @@ class GCPAdapter:
         """Resolve Application Default Credentials.
 
         Uses ``google.auth.default()`` — the same resolution order as ``gcloud`` and every
-        Google client library: ``GOOGLE_APPLICATION_CREDENTIALS``, ``gcloud auth
-        application-default login`` credentials, then the metadata server on GCE/GKE/Cloud
-        Run. Raises :class:`AdapterAuthError` with remediation guidance if none are found.
+        Google client library. Raises :class:`AdapterAuthError` with remediation guidance
+        if no credentials are found.
         """
         try:
             import google.auth
@@ -85,156 +88,154 @@ class GCPAdapter:
             )
 
         resources: list[Resource] = []
-        for rtype in requested:
-            if rtype == "google_compute_instance":
-                for asset in self._list_compute_instances(project=scope):
-                    resources.append(
-                        normalize_compute_instance_from_cai(asset, project=scope)
-                    )
+        for asset in self._list_assets(project=scope):
+            asset_type = asset.get("asset_type")
+            rtype = next(
+                (t for t, a in _TYPE_TO_CAI_ASSET_TYPE.items() if a == asset_type), None
+            )
+            if rtype not in requested:
+                continue
+            r = normalize_cai(asset, project=scope)
+            if r is not None:
+                resources.append(r)
         return resources
 
-    # -- CAI calls (stubbed in Phase 1) ------------------------------------------------
+    # -- CAI calls (stubbed) -----------------------------------------------------------
 
-    def _list_compute_instances(self, *, project: str) -> list[dict[str, Any]]:
-        """Return CAI ``Asset`` dicts for ``compute.googleapis.com/Instance`` in ``project``.
+    def _list_assets(self, *, project: str) -> list[dict[str, Any]]:
+        """Return CAI ``Asset`` dicts for the supported asset types in ``project``.
 
-        TODO (Phase 1 follow-up): replace this stub with a real call:
+        TODO (follow-up): replace this stub with a real call:
 
             from google.cloud import asset_v1
             client = asset_v1.AssetServiceClient(credentials=self._credentials)
             pager = client.list_assets(request={
                 "parent": f"projects/{project}",
-                "asset_types": ["compute.googleapis.com/Instance"],
+                "asset_types": sorted(set(_TYPE_TO_CAI_ASSET_TYPE.values())),
                 "content_type": asset_v1.ContentType.RESOURCE,
             })
             return [json.loads(asset_v1.Asset.to_json(a)) for a in pager]
 
-        Until then we return realistic, hand-built data that drifts from the example
-        Terraform state so the scan pipeline is exercisable.
+        Until then we return realistic, hand-built data that drifts from the Phase 3
+        example state so the scan pipeline is exercisable offline.
         """
-        return _stub_compute_instances(project)
+        return _stub_assets(project)
 
 
-def _machine_type_url(project: str, zone: str, machine_type: str) -> str:
-    return (
-        f"https://www.googleapis.com/compute/v1/projects/{project}"
-        f"/zones/{zone}/machineTypes/{machine_type}"
-    )
+# --------------------------------------------------------------------------------------
+# Stubbed CAI data — drifts from tests/fixtures/firewall_subnet_drift.tfstate.json
+# --------------------------------------------------------------------------------------
+
+_REGION = "us-central1"
 
 
-def _stub_compute_instances(project: str) -> list[dict[str, Any]]:
-    """Hand-built CAI-shaped instances that intentionally drift from the example tfstate.
+def _instance_asset(
+    project: str,
+    name: str,
+    zone: str,
+    machine_type: str,
+    *,
+    sa_email: str,
+    tags: list[str],
+) -> dict[str, Any]:
+    return {
+        "name": f"//compute.googleapis.com/projects/{project}/zones/{zone}/instances/{name}",
+        "asset_type": "compute.googleapis.com/Instance",
+        "resource": {
+            "data": {
+                "name": name,
+                "zone": f"https://www.googleapis.com/compute/v1/projects/{project}/zones/{zone}",
+                "machineType": (
+                    f"https://www.googleapis.com/compute/v1/projects/{project}"
+                    f"/zones/{zone}/machineTypes/{machine_type}"
+                ),
+                "status": "RUNNING",
+                "canIpForward": False,
+                "deletionProtection": False,
+                "labels": {"env": "prod"},
+                "tags": {"items": tags},
+                "metadata": {"items": [{"key": "enable-oslogin", "value": "TRUE"}]},
+                "networkInterfaces": [
+                    {
+                        "name": "nic0",
+                        "network": (
+                            f"https://www.googleapis.com/compute/v1/projects/{project}"
+                            f"/global/networks/prod-vpc"
+                        ),
+                        "subnetwork": (
+                            f"https://www.googleapis.com/compute/v1/projects/{project}"
+                            f"/regions/{_REGION}/subnetworks/prod-subnet"
+                        ),
+                        "networkIP": "10.0.0.10",
+                        "accessConfigs": [],
+                    }
+                ],
+                "serviceAccounts": [
+                    {"email": sa_email, "scopes": ["https://www.googleapis.com/auth/cloud-platform"]}
+                ],
+                "scheduling": {"preemptible": False, "automaticRestart": True},
+            }
+        },
+    }
 
-    - ``api-server-prod``: machine type drifted n2-standard-4 -> n2-standard-8, a new
-      ``block-project-ssh-keys`` metadata entry appeared, and a public IP was attached.
-    - ``worker-01``: matches Terraform exactly (no drift).
-    - ``orphan-debug-vm``: exists live but is not in Terraform state (unmanaged).
+
+def _stub_assets(project: str) -> list[dict[str, Any]]:
+    """Live state: instances match Terraform; the subnet and firewall have drifted.
+
+    - subnet ``prod-subnet``: ``ipCidrRange`` 10.0.0.0/24 -> 10.0.0.0/20 (MEDIUM, but
+      every instance in the subnet is DIRECTly impacted -> wide blast radius).
+    - firewall ``allow-http``: ``sourceRanges`` 10.0.0.0/8 -> 0.0.0.0/0 (CRITICAL;
+      DIRECTly impacts the http-server-tagged instances).
+    - instances: unchanged, so the only drift is on the high-blast-radius resources.
     """
-
-    def instance(
-        name: str,
-        zone: str,
-        machine_type: str,
-        *,
-        subnetwork: str,
-        network: str,
-        sa_email: str,
-        metadata_items: list[dict[str, str]],
-        labels: dict[str, str],
-        tags: list[str],
-        external_ip: str | None = None,
-        preemptible: bool = False,
-    ) -> dict[str, Any]:
-        access_configs = (
-            [{"name": "External NAT", "natIP": external_ip, "type": "ONE_TO_ONE_NAT"}]
-            if external_ip
-            else []
-        )
-        return {
-            "name": (
-                f"//compute.googleapis.com/projects/{project}/zones/{zone}/instances/{name}"
-            ),
-            "asset_type": "compute.googleapis.com/Instance",
-            "resource": {
-                "version": "v1",
-                "discovery_document_uri": "https://www.googleapis.com/discovery/v1/apis/compute/v1/rest",
-                "discovery_name": "Instance",
-                "parent": f"//cloudresourcemanager.googleapis.com/projects/{project}",
-                "data": {
-                    "name": name,
-                    "zone": (
-                        f"https://www.googleapis.com/compute/v1/projects/{project}/zones/{zone}"
-                    ),
-                    "machineType": _machine_type_url(project, zone, machine_type),
-                    "status": "RUNNING",
-                    "canIpForward": False,
-                    "deletionProtection": False,
-                    "labels": labels,
-                    "tags": {"items": tags},
-                    "metadata": {"items": metadata_items},
-                    "networkInterfaces": [
-                        {
-                            "name": "nic0",
-                            "network": (
-                                f"https://www.googleapis.com/compute/v1/projects/{project}"
-                                f"/global/networks/{network}"
-                            ),
-                            "subnetwork": (
-                                f"https://www.googleapis.com/compute/v1/projects/{project}"
-                                f"/regions/{zone.rsplit('-', 1)[0]}/subnetworks/{subnetwork}"
-                            ),
-                            "networkIP": "10.0.0.10" if name == "api-server-prod" else "10.0.0.20",
-                            "accessConfigs": access_configs,
-                        }
-                    ],
-                    "serviceAccounts": [
-                        {
-                            "email": sa_email,
-                            "scopes": ["https://www.googleapis.com/auth/cloud-platform"],
-                        }
-                    ],
-                    "scheduling": {"preemptible": preemptible, "automaticRestart": not preemptible},
-                },
-            },
-        }
-
+    sa = f"sa-app@{project}.iam.gserviceaccount.com"
     return [
-        instance(
-            "api-server-prod",
-            "us-central1-a",
-            "n2-standard-8",  # drift: tfstate says n2-standard-4
-            subnetwork="prod-subnet",
-            network="prod-vpc",
-            sa_email="sa-api@" + project + ".iam.gserviceaccount.com",
-            metadata_items=[
-                {"key": "enable-oslogin", "value": "TRUE"},
-                {"key": "block-project-ssh-keys", "value": "true"},  # drift: new key
-            ],
-            labels={"env": "prod", "team": "platform"},
-            tags=["http-server", "ssh"],
-            external_ip="34.120.55.10",  # drift: instance was private in tfstate
-        ),
-        instance(
-            "worker-01",
-            "us-central1-b",
-            "e2-medium",  # matches tfstate — no drift
-            subnetwork="prod-subnet",
-            network="prod-vpc",
-            sa_email="sa-worker@" + project + ".iam.gserviceaccount.com",
-            metadata_items=[{"key": "enable-oslogin", "value": "TRUE"}],
-            labels={"env": "prod", "team": "data"},
-            tags=["worker"],
-            preemptible=True,
-        ),
-        instance(
-            "orphan-debug-vm",
-            "us-central1-a",
-            "e2-small",
-            subnetwork="prod-subnet",
-            network="prod-vpc",
-            sa_email="sa-default@" + project + ".iam.gserviceaccount.com",
-            metadata_items=[],
-            labels={"env": "prod"},
-            tags=["debug"],
-        ),
+        _instance_asset(project, "api-server-prod", "us-central1-a", "n2-standard-4",
+                        sa_email=sa, tags=["http-server", "ssh"]),
+        _instance_asset(project, "web-2", "us-central1-a", "e2-standard-2",
+                        sa_email=sa, tags=["http-server"]),
+        _instance_asset(project, "worker-01", "us-central1-b", "e2-medium",
+                        sa_email=sa, tags=["worker"]),
+        {
+            "name": (
+                f"//compute.googleapis.com/projects/{project}"
+                f"/regions/{_REGION}/subnetworks/prod-subnet"
+            ),
+            "asset_type": "compute.googleapis.com/Subnetwork",
+            "resource": {
+                "data": {
+                    "name": "prod-subnet",
+                    "region": f"https://www.googleapis.com/compute/v1/projects/{project}/regions/{_REGION}",
+                    "network": (
+                        f"https://www.googleapis.com/compute/v1/projects/{project}"
+                        f"/global/networks/prod-vpc"
+                    ),
+                    "ipCidrRange": "10.0.0.0/20",  # drift: tfstate says /24
+                    "privateIpGoogleAccess": True,
+                    "secondaryIpRanges": [
+                        {"rangeName": "pods", "ipCidrRange": "10.4.0.0/14"}
+                    ],
+                    "purpose": "PRIVATE",
+                }
+            },
+        },
+        {
+            "name": f"//compute.googleapis.com/projects/{project}/global/firewalls/allow-http",
+            "asset_type": "compute.googleapis.com/Firewall",
+            "resource": {
+                "data": {
+                    "name": "allow-http",
+                    "network": (
+                        f"https://www.googleapis.com/compute/v1/projects/{project}"
+                        f"/global/networks/prod-vpc"
+                    ),
+                    "direction": "INGRESS",
+                    "priority": 1000,
+                    "disabled": False,
+                    "sourceRanges": ["0.0.0.0/0"],  # drift: tfstate says 10.0.0.0/8
+                    "targetTags": ["http-server"],
+                    "allowed": [{"IPProtocol": "tcp", "ports": ["80", "443"]}],
+                }
+            },
+        },
     ]
