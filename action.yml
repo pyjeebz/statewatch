@@ -1,4 +1,4 @@
-name: "statewatch"
+name: "statewatch — Dependency-Aware GCP Drift"
 description: "Dependency-aware GCP drift detection — what changed, and what it breaks."
 author: "pyjeebz"
 branding:
